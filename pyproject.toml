@@ -1,0 +1,17 @@
+[project]
+name = "codeatlas"
+version = "0.1.0"
+description = "Code intelligence MCP server + CLI: symbol graph, change impact, affected-test selection, PR risk"
+requires-python = ">=3.10"
+dependencies = ["mcp[cli]>=1.2.0,<2", "GitPython>=3.1"]
+
+[project.scripts]
+codeatlas = "codeatlas.cli:main"
+codeatlas-mcp = "codeatlas.server:main"
+
+[tool.setuptools]
+packages = ["codeatlas"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

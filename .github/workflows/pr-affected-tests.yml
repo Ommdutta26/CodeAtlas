@@ -1,0 +1,19 @@
+# Drop this into ANY Python repo: runs only the tests affected by the PR and comments a risk summary.
+name: Affected tests
+on: pull_request
+jobs:
+  affected:
+    runs-on: ubuntu-latest
+    permissions: {pull-requests: write}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pytest -r requirements.txt codeatlas   # or: pip install git+https://github.com/<you>/codeatlas
+      - name: Risk review
+        run: codeatlas review --repo . --range origin/${{ github.base_ref }}..HEAD | tee risk.json
+        env: {CODEATLAS_ROOTS: "${{ github.workspace }}"}
+      - name: Run affected tests only
+        run: codeatlas test --repo . --range origin/${{ github.base_ref }}..HEAD
+        env: {CODEATLAS_ROOTS: "${{ github.workspace }}"}
