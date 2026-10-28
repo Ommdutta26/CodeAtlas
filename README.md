@@ -707,12 +707,6 @@ Changes to dependency analysis and test selection should include examples that c
 
 ---
 
-## License
-
-Add your chosen open-source license and include the corresponding `LICENSE` file before publishing the project.
-
-No specific license is assumed by this README.
-
 ---
 
 **CodeAtlas — Know what your code change can affect before you merge it.**
