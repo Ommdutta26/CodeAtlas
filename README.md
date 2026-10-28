@@ -1,39 +1,75 @@
 # CodeAtlas
 
-**Code intelligence for Python repositories — understand impact, identify relevant tests, and assess PR risk.**
+**Code intelligence for Python repositories — understand change impact, identify relevant tests, and assess pull-request risk.**
 
-CodeAtlas is a static code analysis tool that works as both an **MCP server for AI assistants** and a **CLI for developers and CI pipelines**. It builds a persistent graph of symbols, imports, function calls, and tests to help developers understand how a code change can affect the rest of a codebase.
+CodeAtlas is a code intelligence tool that works as an **MCP server for AI assistants** and a **CLI for developers and CI pipelines**. It builds a persistent graph of symbols, imports, function calls, and related code relationships to help developers understand how a code change may affect the rest of a Python codebase.
 
-Traditional search tools can find where a function is mentioned. CodeAtlas goes further by analyzing relationships between code, tracing potential impact, identifying affected tests, and explaining why a change may be risky.
+Traditional search tools find where a function is mentioned. CodeAtlas goes further by analyzing code relationships, tracing potential impact, selecting relevant tests, and explaining factors that may make a change risky.
 
-> Change a function. Understand what could break, which tests matter, and how risky the change is — before merging.
+> Change a function. Understand what could break, which tests matter, and how risky the change is — before you merge.
+
+---
+
+## Table of Contents
+
+- [Why CodeAtlas?](#why-codeatlas)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [How It Works](#how-it-works)
+- [Technology Stack](#technology-stack)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [CLI Commands](#cli-commands)
+- [Example: Change Impact Analysis](#example-change-impact-analysis)
+- [Regression Detection Demonstration](#regression-detection-demonstration)
+- [MCP Integration](#mcp-integration)
+- [CI Integration](#ci-integration)
+- [Storage and Configuration](#storage-and-configuration)
+- [Risk Analysis and Test Selection](#risk-analysis-and-test-selection)
+- [Architecture Health](#architecture-health)
+- [Security Considerations](#security-considerations)
+- [Known Limitations](#known-limitations)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
 
 ## Why CodeAtlas?
 
-When a developer modifies a function in a large repository, several questions arise:
+When developers modify a function in a large repository, several questions arise:
 
 - Which functions and modules depend on this change?
 - Which tests should be executed?
-- Could the change affect other parts of the application?
+- Could the change break downstream functionality?
 - Are important code paths insufficiently tested?
-- Which files have accumulated complexity and frequent changes?
+- Which files have accumulated high complexity and frequent changes?
+- How can an AI coding assistant understand the impact of a proposed change?
 
-CodeAtlas answers these questions using a persistent code graph, Git-aware change analysis, and dependency-based test selection.
+Running every test after every small change can be expensive. Running only tests that directly cover the changed function can miss regressions in dependent modules.
+
+CodeAtlas addresses this problem through persistent code indexing, Git-aware change analysis, dependency tracing, and affected-test selection.
 
 ## Key Features
 
 | Feature | Description |
 |---|---|
-| Incremental indexing | Parses only files whose content has changed. |
-| Symbol discovery | Finds function and class definitions with source snippets. |
-| Reference analysis | Finds references and potential callers using graph relationships. |
-| Impact analysis | Traces affected functions, modules, and tests from changed symbols. |
-| Affected test execution | Runs selected dependent tests and reports estimated time savings. |
-| Change risk review | Assesses blast radius, hotspots, and changed code not reached by tests. |
-| Hotspot detection | Ranks files using code churn and complexity. |
-| Architecture health | Detects module-level import cycles, dead-code candidates, and complex functions. |
-| MCP integration | Exposes code intelligence tools to compatible AI assistants. |
-| CI integration | Supports pull-request workflows through the CLI and GitHub Actions. |
+| Persistent code indexing | Stores code symbols and relationships in a persistent graph backed by SQLite. |
+| Symbol discovery | Locates function and class definitions. |
+| Reference analysis | Identifies references and potential callers using available graph relationships. |
+| Change impact analysis | Identifies potentially affected functions, modules, and tests. |
+| Git-aware analysis | Analyzes changes between Git revisions. |
+| Affected-test selection | Selects test files associated with the affected dependency graph. |
+| Automated test execution | Runs selected tests and reports passes, failures, and errors. |
+| Change risk review | Reports a heuristic risk score and supporting reasons. |
+| Hotspot detection | Identifies files with elevated churn and complexity, where supported by the implementation. |
+| Architecture health | Provides structural analysis such as import-cycle detection and complex-function identification, where implemented. |
+| MCP integration | Makes supported code intelligence operations available to compatible AI assistants. |
+| CLI integration | Provides commands for local development and potential CI workflows. |
+
+CodeAtlas uses static analysis, so its findings represent potential impact rather than a guarantee that every runtime dependency has been discovered.
+
+---
 
 ## Architecture
 
@@ -41,66 +77,149 @@ CodeAtlas answers these questions using a persistent code graph, Git-aware chang
 flowchart TD
     A[Python Repository] --> B[Python AST Indexer]
     G[Git Diff] --> H[Changed Symbol Mapper]
+
     B --> C[Symbol and Dependency Graph]
     C --> D[(SQLite Database)]
+
     H --> E[Impact Analysis]
     D --> E
-    E --> F[Affected Functions, Modules and Tests]
+
+    E --> F[Affected Functions Modules and Tests]
     F --> I[Test Selection and Execution]
-    D --> J[Architecture and Hotspot Analysis]
+
+    D --> J[Hotspot and Architecture Analysis]
     E --> K[Risk Review]
-    I --> L[CLI / MCP Results]
+
+    I --> L[CLI and MCP Results]
     J --> L
     K --> L
 ```
 
-### How it works
+### Core Components
 
-1. **Parse:** The indexer uses Python's Abstract Syntax Tree (AST) to extract functions, classes, imports, and statically identifiable calls.
-2. **Persist:** Code relationships and metadata are stored in SQLite outside the target repository.
-3. **Incrementally update:** Content hashes identify changed files so unchanged files do not need to be reparsed.
-4. **Analyze changes:** Git diffs map changed lines to the innermost affected functions and symbols.
-5. **Trace impact:** Reverse call and import relationships identify potentially affected functions, modules, and tests.
-6. **Select tests:** The test runner chooses relevant tests based on dependency relationships, falling back to the full suite for configuration or dependency changes.
-7. **Report risk:** The review combines change impact, hotspots, and test reachability to provide a risk assessment with supporting reasons.
+**1. Python AST Indexer**
 
-CodeAtlas uses conservative static analysis. Its results are estimates of potential impact, not guarantees that every runtime dependency has been discovered.
+Parses Python source code and extracts supported definitions, imports, function calls, and other structural information.
 
-## Available Tools
+**2. Persistent Code Graph**
 
-CodeAtlas exposes the following capabilities to its CLI and MCP integrations.
+Stores code entities and their relationships so subsequent operations can query the indexed repository.
 
-| Tool | Purpose |
+**3. Git Change Analyzer**
+
+Uses Git revision comparisons to identify changed files and map changes to affected symbols where possible.
+
+**4. Impact Analysis Engine**
+
+Traverses available dependency relationships to identify potentially affected code.
+
+**5. Test Selection Engine**
+
+Uses dependency information to select candidate test files and invokes the test runner.
+
+**6. Risk Review Engine**
+
+Combines available signals, such as change impact, complexity, hotspots, and test reachability, to provide a heuristic assessment.
+
+**7. CLI and MCP Interfaces**
+
+Expose supported operations to developers, automation tools, and compatible AI assistants.
+
+---
+
+## How It Works
+
+### Step 1: Index the repository
+
+CodeAtlas parses the Python repository and records supported symbols and dependency relationships.
+
+```powershell
+codeatlas index --repo "C:\path\to\your\python-project"
+```
+
+### Step 2: Persist the analysis
+
+CodeAtlas stores the code graph and indexing metadata in SQLite. Content hashes can be used to determine which files need to be reparsed during subsequent indexing, depending on the indexing implementation.
+
+### Step 3: Detect changes
+
+Git provides the changed-file information for the requested revision range.
+
+CodeAtlas maps changed lines to the affected symbols where its static analysis can resolve them.
+
+### Step 4: Trace potential impact
+
+The analyzer follows available call and import relationships to identify functions, modules, and tests that may be affected.
+
+### Step 5: Select relevant tests
+
+The test-selection engine identifies candidate tests based on the dependency graph and invokes the configured test runner.
+
+### Step 6: Review the results
+
+CodeAtlas reports information such as:
+
+- Changed symbols
+- Potentially affected modules
+- Risk score and contributing reasons
+- Selected test files
+- Passed and failed tests
+- Failure messages and process exit status
+
+### Step 7: Make a decision
+
+Developers can use the results to investigate a regression, modify the implementation, run further tests, and decide whether the change is ready for review.
+
+---
+
+## Technology Stack
+
+The project is designed around the following technologies and concepts. Verify the dependencies and implementations in the current checkout before treating every item as a confirmed implementation detail.
+
+| Technology | Purpose |
 |---|---|
-| `index_repository` | Builds or incrementally updates the repository graph. |
-| `find_symbol` | Locates symbol definitions and provides source snippets. |
-| `find_references` | Finds references and potential callers, labelled `resolved` or `name-match`. |
-| `impact_analysis` | Identifies affected symbols, modules, and tests for a Git range or uncommitted changes. |
-| `run_affected_tests` | Executes selected dependent tests and reports time saved. |
-| `review_changes` | Evaluates change risk and explains contributing factors. |
-| `hotspots` | Ranks files by churn and complexity. |
-| `architecture_health` | Reports import cycles, dead-code candidates, and complex functions. |
+| Python | Core implementation |
+| Python AST | Static source-code analysis |
+| SQLite | Persistent graph and indexing storage |
+| Git | Change and revision analysis |
+| pytest | Python test execution in the demonstrated workflow |
+| MCP | Integration with AI coding assistants |
+| CLI | Local development and automation |
+| GitHub Actions | Potential continuous integration integration |
+| Docker | Potential isolated execution and deployment |
+
+---
 
 ## Installation
 
 ### Requirements
 
-- Python and a compatible version of `pip`
+- Python version compatible with the project's dependencies
 - Git
+- pip
 - A Python repository to analyze
-- Node.js and `npx` for the MCP Inspector workflow
-- An MCP-compatible client for AI-assisted analysis
+- Node.js and `npx` if using MCP Inspector
+- An MCP-compatible client if using AI-assisted analysis
 
-### 1. Clone the repository
+### 1. Clone CodeAtlas
 
-```bash
+Replace the example URL with your actual repository URL.
+
+```powershell
 git clone <YOUR_CODEATLAS_REPOSITORY_URL>
-cd CodeAtlas
+cd codeatlas
 ```
 
-Replace the placeholder with your actual repository URL.
+Use the directory containing `pyproject.toml` as the project root.
 
 ### 2. Create a virtual environment
+
+**Windows PowerShell**
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
 
 **Linux / macOS**
 
@@ -109,71 +228,125 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-**Windows PowerShell**
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
 ### 3. Install dependencies
 
 ```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 pip install -e .
 ```
 
-### 4. Run the tests
+Run these commands from the CodeAtlas project directory.
+
+### 4. Run the project tests
 
 ```bash
 python -m pytest tests -q
 ```
 
-The project's current test suite is documented as containing 12 tests. The command above verifies the tests in your checkout; the number of passing tests depends on the current implementation and environment.
+This checks the tests available in your checkout. The actual result depends on the current implementation and environment.
+
+---
 
 ## Quick Start
 
-Set the directories CodeAtlas is allowed to read, then index a Python repository.
+The following example uses Windows PowerShell.
 
-**Linux / macOS**
+### 1. Configure repository access
 
-```bash
-export CODEATLAS_ROOTS="$HOME/projects"
-codeatlas index --repo "$HOME/projects/myapp"
-```
-
-**Windows PowerShell**
+Set the root directory that CodeAtlas is allowed to access:
 
 ```powershell
-$env:CODEATLAS_ROOTS = "$HOME\projects"
-codeatlas index --repo "$HOME\projects\myapp"
+$env:CODEATLAS_ROOTS = "C:\Users\YourUser\OneDrive\Desktop"
 ```
 
-Replace the example repository path with your target project's location.
+Replace the path with the directory containing your target repositories.
 
-After indexing, analyze a proposed change:
+This setting applies to the current PowerShell session. Configure it again in a new terminal if needed.
 
-```bash
-codeatlas review --repo ~/projects/myapp --range main..HEAD
+### 2. Index a repository
+
+```powershell
+codeatlas index --repo "C:\path\to\your\python-project"
 ```
 
-Run tests selected for that change:
+An initial indexing operation may report statistics such as:
 
-```bash
-codeatlas test --repo ~/projects/myapp --range main..HEAD
+```json
+{
+  "files": 7,
+  "reparsed": 7,
+  "removed": 0,
+  "symbols": 13,
+  "calls": 26,
+  "imports": 9,
+  "parse_errors": [],
+  "full_reindex": true
+}
 ```
 
-The example Git range compares `main` with `HEAD`. Ensure the base branch exists locally and use the appropriate repository path and branch names for your environment.
+These values are an example of the output observed during development on a sample repository, not a guarantee for every repository.
 
-For uncommitted changes, use the CLI's supported uncommitted-change mode if available in your installed version.
+### 3. Review a Git change
 
-## Example: Analyzing a Function Change
+```powershell
+codeatlas review --repo "C:\path\to\your\python-project" --range HEAD~1..HEAD
+```
 
-Imagine a Python application with the following modules:
+The range `HEAD~1..HEAD` compares the current commit against its immediate parent.
+
+### 4. Run affected tests
+
+```powershell
+codeatlas test --repo "C:\path\to\your\python-project" --range HEAD~1..HEAD
+```
+
+CodeAtlas reports the selected test files and the execution results.
+
+For pull requests, choose a Git range whose base and head represent the intended comparison. Ensure the base revision is available locally.
+
+---
+
+## CLI Commands
+
+The following commands are part of the demonstrated CLI workflow.
+
+### Index a repository
+
+```powershell
+codeatlas index --repo "C:\path\to\repo"
+```
+
+Builds or updates the repository index.
+
+### Review changes
+
+```powershell
+codeatlas review --repo "C:\path\to\repo" --range HEAD~1..HEAD
+```
+
+Reports changed symbols, risk information, and suggested tests.
+
+### Run selected tests
+
+```powershell
+codeatlas test --repo "C:\path\to\repo" --range HEAD~1..HEAD
+```
+
+Selects candidate test files, executes them, and reports the results.
+
+Other commands and MCP tools should be documented according to their actual names and behavior in the installed version.
+
+---
+
+## Example: Change Impact Analysis
+
+Consider a Python application with pricing, checkout, and order-processing modules.
 
 ```text
 myapp/
-├── src/
+├── shop/
+│   ├── __init__.py
 │   ├── pricing.py
 │   ├── checkout.py
 │   └── orders.py
@@ -183,198 +356,336 @@ myapp/
     └── test_orders.py
 ```
 
-The pricing module contains a shared function:
+Suppose the pricing module contains:
 
 ```python
-def clamp(value, minimum, maximum):
+def clamp(value: float, minimum: float, maximum: float) -> float:
+    """Keep a value inside an inclusive range."""
     return max(minimum, min(value, maximum))
 ```
 
-The checkout and orders modules use `clamp()` to constrain values.
+Other functions use this helper to constrain discount rates and calculate checkout totals.
 
-Suppose a developer changes its behavior. A simple text search can find references to the function, but it cannot reliably determine the full transitive impact of the change.
+For example, the dependency chain might look like:
 
-CodeAtlas can analyze the indexed dependency graph to identify:
+```text
+clamp()
+  └── calculate_discount()
+       └── discounted_total()
+            └── checkout_total()
+                 └── create_order()
+```
 
-- Direct callers of `clamp()`.
-- Additional callers reachable through the call graph.
-- Modules potentially affected through import relationships.
-- Tests associated with the affected dependency graph.
-- Relevant code hotspots and testing gaps.
+If `clamp()` changes, the consequences may extend beyond `pricing.py`.
 
-The developer can then review the analysis and run the selected tests before merging the change.
+CodeAtlas can use its indexed relationships to identify potential downstream effects, suggest tests, and help developers investigate whether the change introduces a regression.
 
-*This example illustrates the intended workflow; actual results depend on the repository's code and the relationships successfully resolved by static analysis.*
+Actual results depend on the repository and the relationships successfully resolved by static analysis.
+
+---
+
+## Regression Detection Demonstration
+
+CodeAtlas was tested against a sample Python repository containing pricing, checkout, and order-processing modules.
+
+A regression was deliberately introduced into `shop.pricing.clamp` to evaluate the change-review and affected-test workflows.
+
+### 1. Analyze the change
+
+```powershell
+codeatlas review --repo "C:\path\to\codeatlas_test_repo" --range HEAD~1..HEAD
+```
+
+The observed review identified:
+
+```json
+{
+  "risk_level": "low",
+  "risk_score": 10,
+  "suggested_tests": [
+    "tests/test_checkout.py",
+    "tests/test_orders.py",
+    "tests/test_pricing.py"
+  ],
+  "changed_symbols": [
+    {
+      "symbol": "shop.pricing.clamp",
+      "file": "shop/pricing.py",
+      "complexity": 1
+    }
+  ]
+}
+```
+
+The review also reported that five dependent modules might be affected and that `shop/pricing.py` was a churn/complexity hotspot.
+
+### 2. Run the selected tests
+
+```powershell
+codeatlas test --repo "C:\path\to\codeatlas_test_repo" --range HEAD~1..HEAD
+```
+
+### 3. Observed results
+
+| Metric | Result |
+|---|---:|
+| Selected test files | 3 |
+| Passed tests | 1 |
+| Failed tests | 6 |
+| Errors | 0 |
+| Skipped tests | 0 |
+| Exit code | 1 |
+| Reported test savings | 0% |
+
+The selected tests included pricing, checkout, and order-processing tests.
+
+### 4. Understand the regression
+
+The intentionally incorrect implementation was:
+
+```python
+return min(minimum, max(value, maximum))
+```
+
+The correct implementation is:
+
+```python
+return max(minimum, min(value, maximum))
+```
+
+For example:
+
+| Input | Correct output |
+|---|---:|
+| `clamp(5, 0, 10)` | `5` |
+| `clamp(-5, 0, 10)` | `0` |
+| `clamp(15, 0, 10)` | `10` |
+
+The incorrect implementation returned unexpected values, causing failures in direct pricing tests and downstream checkout and order calculations.
+
+### What this demonstrates
+
+This experiment demonstrates that CodeAtlas can:
+
+1. Index a sample Python repository.
+2. Identify a changed function from a Git revision range.
+3. Produce a change-risk report.
+4. Select related test files.
+5. Execute the selected tests.
+6. Report test failures and a nonzero exit code.
+
+It does not yet establish the tool's overall regression-detection rate, scalability, or performance advantage over running the complete test suite.
+
+**Important:** The observed risk score was low despite six test failures. Risk scores are heuristic assessments, not calibrated probabilities of a defect. This is an important area for further improvement.
+
+---
 
 ## MCP Integration
 
-The MCP server lets compatible AI assistants use CodeAtlas as a code intelligence service.
+The Model Context Protocol (MCP) allows compatible AI assistants to call tools exposed by a server.
 
-### Option 1: Test with MCP Inspector
+CodeAtlas can provide a structured interface for code intelligence operations, allowing an assistant to request supported analyses and interpret the returned evidence.
 
-Run:
+### Option 1: MCP Inspector
+
+If the MCP server entry point is installed and available on your executable path, start the Inspector with:
 
 ```bash
 npx @modelcontextprotocol/inspector codeatlas-mcp
 ```
 
-This launches the MCP Inspector with the configured CodeAtlas server command. Follow the Inspector interface to connect and inspect the tools exposed by your server.
+Follow the Inspector interface to connect to the server and inspect its available tools.
 
-Ensure `codeatlas-mcp` is installed and available on your executable path.
+The exact launch command depends on the installed MCP SDK, entry point, and configuration.
 
-### Option 2: Configure Claude Code
+### Option 2: Claude Code
 
-Add CodeAtlas as an MCP server:
+For a compatible Claude Code installation, an example configuration command is:
 
 ```bash
 claude mcp add codeatlas \
-  -e CODEATLAS_ROOTS="$HOME/projects" \
+  -e CODEATLAS_ROOTS="C:\path\to\allowed\repositories" \
   -- codeatlas-mcp
 ```
 
-This example uses a Unix-style path. On Windows, set `CODEATLAS_ROOTS` to an appropriate Windows directory and follow your installed Claude Code version's command syntax.
-
-Check the connection with:
+Check the available MCP servers:
 
 ```bash
 claude mcp list
 ```
 
-Once connected, ask your AI assistant questions such as:
+Confirm the command and environment-variable syntax against your installed Claude Code version.
 
-- "Analyze the impact of my uncommitted changes."
-- "Find the definition of `clamp` and its callers."
-- "Review this PR and explain its risk factors."
-- "Run the affected tests and summarize the results."
-- "Identify the most complex and frequently modified files."
+### Example interactions
 
-The assistant can invoke the relevant MCP tools instead of relying exclusively on manually searching the repository.
+Once connected, an AI assistant could use supported CodeAtlas tools to help answer questions such as:
+
+- Which functions depend on `clamp()`?
+- What might break if I modify this function?
+- Which tests should I run for this change?
+- What do the selected test failures indicate?
+- Which files have elevated complexity and change frequency?
+
+MCP provides the communication interface. CodeAtlas remains responsible for the analysis and operations implemented by its tools.
+
+---
 
 ## CI Integration
 
-CodeAtlas can be incorporated into a continuous integration workflow to help reduce unnecessary test execution and surface potentially risky changes.
+CodeAtlas can be integrated into continuous integration workflows to analyze pull-request changes and execute selected tests.
 
-Copy the provided workflow into your target repository:
+A typical workflow is:
 
-```text
-.github/workflows/pr-affected-tests.yml
-```
+1. Check out the repository and the relevant base revision.
+2. Set up Python and install project dependencies.
+3. Install CodeAtlas.
+4. Index the target repository.
+5. Analyze the proposed changes.
+6. Execute selected tests.
+7. Publish the results or fail the job when required checks fail.
 
-Adapt the workflow to your repository's Python version, dependency installation, branch configuration, and test commands.
-
-A typical pull-request workflow is:
-
-1. Check out the repository and the appropriate base revision.
-2. Install CodeAtlas and the project's dependencies.
-3. Index the repository.
-4. Analyze the pull-request changes.
-5. Run affected tests, with a full-suite fallback where required.
-6. Publish or retain the results as CI output.
-
-**Important:** Verify that your workflow handles configuration changes, dependency-file changes, and test-selection failures conservatively. Do not treat a successful subset of tests as proof that the entire application is correct.
-
-## Docker
-
-Build the image:
+For example, a CI job could invoke:
 
 ```bash
-docker build -t codeatlas .
+codeatlas review --repo . --range BASE_SHA..HEAD_SHA
+codeatlas test --repo . --range BASE_SHA..HEAD_SHA
 ```
 
-Run the MCP server with the repository mounted:
+Replace `BASE_SHA` and `HEAD_SHA` with actual revision values supplied by the CI environment.
 
-```bash
-docker run --rm -i \
-  -v "$PWD:/repos" \
-  -e CODEATLAS_ROOTS=/repos \
-  codeatlas
-```
+Before relying on these commands in a production pipeline, verify that the workflow handles:
 
-The exact mount path and command depend on the Dockerfile's configured entry point. The example assumes the image starts the MCP server and that the repository is mounted at `/repos`.
+- Missing base revisions
+- Dependency and configuration changes
+- Test-selection failures
+- Test-runner failures
+- Repositories requiring a full-suite fallback
 
-Use containers with restricted permissions when analyzing untrusted repositories.
+Do not assume that a successful subset of tests proves that the entire application is correct.
+
+If a GitHub Actions workflow is included in the repository, document its actual path and validate it against a real pull request before advertising it as production-ready.
+
+---
 
 ## Storage and Configuration
 
-### Repository graph
+### Persistent graph
 
-CodeAtlas stores its persistent analysis data in SQLite outside the analyzed repository. The graph includes symbol metadata, dependency relationships, and indexing information.
+CodeAtlas uses SQLite for persistent analysis data. The database stores graph and indexing information outside the analyzed repository, according to the project's configured storage behavior.
+
+Keeping analysis data outside the target repository helps avoid adding generated graph artifacts to application source control.
 
 ### Environment variables
 
 | Variable | Purpose |
 |---|---|
-| `CODEATLAS_ROOTS` | Allowlist of repository directories CodeAtlas may access. |
-| `CODEATLAS_HOME` | Location for persistent CodeAtlas state and graph storage. |
+| `CODEATLAS_ROOTS` | Restricts the repository directories CodeAtlas may access. |
+| `CODEATLAS_HOME` | Configures the location for persistent CodeAtlas state, if supported by the implementation. |
 
-Set these variables according to your environment and the paths supported by your implementation.
+Example for Windows PowerShell:
 
-Keeping the graph outside the target repository avoids adding analysis artifacts to the project's source tree.
+```powershell
+$env:CODEATLAS_ROOTS = "C:\Users\YourUser\OneDrive\Desktop"
+```
+
+Use the directory paths and environment variables supported by your installed version.
+
+---
 
 ## Risk Analysis and Test Selection
 
-CodeAtlas combines several signals to help developers prioritize code review.
+CodeAtlas provides risk information to help developers prioritize code review.
 
-**Blast radius:** Estimates how much of the codebase may be affected by a change.
+### Blast radius
 
-**Hotspots:** Highlights files with high code churn and complexity.
+Estimates the potential scope of a change using available dependency relationships.
 
-**Test reachability:** Identifies changed code that is not reached by the tests recognized by the analysis.
+### Hotspots
 
-**Affected tests:** Selects tests associated with the dependency graph and reports estimated execution-time savings.
+Highlights files that combine code complexity and change frequency, where the relevant analysis is implemented.
 
-Test savings vary by change. Editing a heavily shared module may select most of the test suite, while modifying an isolated module may require fewer tests.
+### Test reachability
 
-The reported risk is a static-analysis assessment, not a calibrated probability that a production defect will occur.
+Helps identify whether changed code is connected to the tests recognized by the analysis.
+
+### Affected tests
+
+Selects candidate tests associated with the affected dependency graph.
+
+### Risk score
+
+Combines available signals to produce a heuristic assessment and supporting reasons.
+
+A low score should not be interpreted as proof of safety. Risk estimates depend on graph completeness, dependency resolution, test information, and the scoring algorithm.
+
+The usefulness of test selection should be evaluated against full-suite runs using representative changes, including regressions that affect indirect callers.
+
+---
 
 ## Architecture Health
 
-CodeAtlas also helps identify structural issues that can make a Python codebase harder to maintain.
+CodeAtlas may also provide structural analysis for identifying maintainability issues.
 
-- **Import cycles:** Uses strongly connected component analysis (Tarjan's algorithm) to identify cycles among module-level imports.
-- **Dead-code candidates:** Identifies potentially unused symbols while excluding recognized re-exports and names listed in `__all__`.
-- **Complex functions:** Highlights functions with elevated complexity.
-- **Churn and complexity:** Combines change frequency and complexity to prioritize files for refactoring.
+Potential analyses include:
 
-These findings are candidates for investigation rather than automatic proof that code is unnecessary or defective.
+- **Import cycles:** Detecting circular relationships among modules.
+- **Dead-code candidates:** Identifying symbols that appear unused.
+- **Complex functions:** Highlighting functions with elevated complexity.
+- **Churn and complexity:** Prioritizing files for potential refactoring.
+
+These findings are candidates for investigation rather than proof that a function is unnecessary or defective.
+
+Verify that each analysis is implemented and available in your current version before relying on it.
+
+---
 
 ## Security Considerations
 
-CodeAtlas is designed around read-only code analysis, with test execution as an explicit exception.
+CodeAtlas analyzes source code, but test execution can run arbitrary project code. Treat repository access and test execution as security-sensitive operations.
 
-- **Path allowlisting:** Configure `CODEATLAS_ROOTS` to restrict the repositories that can be accessed.
+- **Path allowlisting:** Configure `CODEATLAS_ROOTS` to restrict accessible repositories.
 - **Read-only indexing:** Static analysis should not modify application source files.
-- **Explicit test execution:** `run_affected_tests` executes commands from the target repository and may therefore run arbitrary project code.
-- **Untrusted repositories:** Use isolated containers or restricted CI runners when analyzing code from unknown contributors.
-- **Least privilege:** Avoid exposing sensitive directories, credentials, or unrelated files through the MCP server.
-- **Persistent state:** Protect the graph database and its parent directory with appropriate filesystem permissions.
+- **Explicit test execution:** Test commands may execute arbitrary Python code and build scripts from the target repository.
+- **Untrusted repositories:** Use isolated containers or restricted CI runners for unknown code.
+- **Least privilege:** Avoid exposing credentials, private directories, or unrelated files to an MCP server.
+- **Persistent state:** Protect the graph database and its parent directory using appropriate filesystem permissions.
+- **MCP access:** Expose tools only to authorized users and clients.
 
-An MCP tool should only be exposed to clients and users who are authorized to access the configured repository paths.
+A path allowlist alone is not a sandbox. Use operating-system permissions and process isolation when analyzing untrusted repositories.
+
+---
 
 ## Known Limitations
 
-- **Python only:** JavaScript and TypeScript support is planned, not currently assumed.
-- **Static call resolution:** Dynamic dispatch, `getattr`, decorator-registered callbacks, and cross-package monkeypatching may not be fully tracked.
-- **Heuristic references:** `name-match` edges indicate possible relationships and are less reliable than resolved edges.
-- **Import-based test selection:** Dependency relationships do not prove runtime execution or complete test coverage.
-- **Import-cycle scope:** The reported cycles concern module-level imports; `TYPE_CHECKING` imports and function-local imports are excluded.
-- **Dead-code analysis:** Public API conventions and dynamic usage can make apparently unused symbols necessary.
-- **Risk estimates:** Risk levels depend on the quality of the graph, static analysis, and available test information.
+- **Python-focused analysis:** The project currently targets Python. JavaScript and TypeScript support should be treated as future work unless implemented separately.
+- **Static call resolution:** Dynamic dispatch, `getattr`, decorator-registered callbacks, monkeypatching, and runtime-generated calls may not be fully tracked.
+- **Reference ambiguity:** Name-based matches can be less reliable than fully resolved relationships.
+- **Test selection:** Dependency relationships do not prove complete runtime coverage.
+- **Risk estimation:** Risk levels depend on the completeness of the graph and the scoring model; they are not probabilities of failure.
+- **Dead-code analysis:** Public APIs and dynamically accessed symbols may appear unused.
+- **Performance claims:** Test-time savings must be measured against a full-suite baseline.
+- **Repository scale:** Performance on large, complex repositories should be benchmarked before making scalability claims.
 
-CodeAtlas favors conservative test selection: it may run more tests than strictly necessary rather than assuming an uncertain dependency is irrelevant.
+CodeAtlas should be treated as an additional source of evidence for code review, not a replacement for comprehensive testing or human judgment.
+
+---
 
 ## Roadmap
 
-Potential future improvements include:
+Potential improvements include:
 
-- JavaScript and TypeScript analysis using Tree-sitter.
-- Coverage-based test selection.
-- GitHub pull-request comment bot.
-- Improved dynamic-call resolution.
-- Richer dependency visualizations.
-- Historical risk and test-time analytics.
+- Coverage-based test selection
+- More accurate risk scoring using dependency reach and test evidence
+- Better dynamic-call resolution
+- GitHub pull-request summaries and automated checks
+- Historical risk and test-time analytics
+- Richer dependency graph visualizations
+- JavaScript and TypeScript support
+- More extensive benchmarking on real-world repositories
 
-These items are planned directions rather than claims about existing functionality.
+These are potential future improvements, not claims about existing functionality.
+
+---
 
 ## Contributing
 
@@ -389,13 +700,18 @@ Contributions are welcome.
    python -m pytest tests -q
    ```
 
-5. Submit a pull request with a description of the change, its expected impact, and relevant test results.
+5. Document the expected behavior and any limitations.
+6. Submit a pull request with relevant test results.
 
-For changes to dependency analysis or test selection, include examples that demonstrate both expected matches and important edge cases.
+Changes to dependency analysis and test selection should include examples that cover both expected relationships and important edge cases.
+
+---
 
 ## License
 
-Add your project's chosen license and include the corresponding `LICENSE` file before publishing. No specific license is assumed here.
+Add your chosen open-source license and include the corresponding `LICENSE` file before publishing the project.
+
+No specific license is assumed by this README.
 
 ---
 
