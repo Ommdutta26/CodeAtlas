@@ -8,8 +8,8 @@ from pathlib import Path
 
 from .security import is_test_path
 
-IGNORE = {".git", "node_modules", "venv", ".venv", "__pycache__", ".tox", "build", "dist",
-          ".mypy_cache", ".pytest_cache", "site-packages", ".eggs"}
+IGNORE = {".git", "node_modules", "venv", ".venv", "env", "__pycache__", ".tox", ".nox", "build", "dist",
+          ".mypy_cache", ".pytest_cache", ".ruff_cache", "site-packages", ".eggs"}
 BRANCH = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler, ast.IfExp,
           ast.comprehension, ast.Assert, ast.BoolOp)
 SCHEMA = """
@@ -30,7 +30,7 @@ SCHEMA_VERSION = "2"
 def connect(repo: Path) -> sqlite3.Connection:
     home = Path(os.environ.get("CODEATLAS_HOME", Path.home() / ".cache" / "codeatlas"))
     home.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(home / (hashlib.sha1(str(repo).encode()).hexdigest()[:16] + ".db"))
+    conn = sqlite3.connect(home / (hashlib.sha1(str(repo).encode()).hexdigest()[:16] + ".db"), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     row = conn.execute("SELECT v FROM meta WHERE k='schema'").fetchone()
@@ -207,8 +207,7 @@ def _py_files(repo: Path) -> list[str]:
     return sorted(out)
 
 
-def index_repo(repo: Path, full: bool = False) -> dict:
-    conn = connect(repo)
+def _index(conn: sqlite3.Connection, repo: Path, full: bool) -> dict:
     files = _py_files(repo)
     modules = {module_name(f) for f in files}
     mod_hash = hashlib.sha1("\n".join(sorted(modules)).encode()).hexdigest()
@@ -252,3 +251,11 @@ def index_repo(repo: Path, full: bool = False) -> dict:
     return {"files": len(files), "reparsed": reparsed, "removed": len(removed), "symbols": count("symbols"),
             "calls": count("edges"), "imports": count("imports"), "parse_errors": errors,
             "full_reindex": bool(force)}
+
+
+def index_repo(repo: Path, full: bool = False) -> dict:
+    conn = connect(repo)
+    try:
+        return _index(conn, repo, full)
+    finally:
+        conn.close()

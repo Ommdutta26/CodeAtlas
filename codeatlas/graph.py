@@ -18,6 +18,8 @@ class Graph:
         self.importers = defaultdict(set)      # module -> modules that import it
         self.runtime_imports_of = defaultdict(set)   # only imports executed at import time (for cycles)
         for r in conn.execute("SELECT file, target, runtime FROM imports"):
+            if r["file"] not in self.files:
+                continue
             importer = self.files[r["file"]]["module"]
             if importer != r["target"]:
                 self.importers[r["target"]].add(importer)
@@ -46,6 +48,13 @@ class Graph:
         if not short.startswith("__") and 0 < len(self.by_short.get(short, [])) <= 3:
             out += [(e, "name-match") for e in self.calls_name.get(short, [])]
         return out
+
+    def dangling_callers(self, q: str):
+        """Calls that were resolved to `q` at parse time even though `q` no longer exists
+        (e.g. a function that was just removed or renamed)."""
+        if q in self.by_q:
+            return []
+        return [(e, "resolved") for e in self.edges if e["callee_qname"] == q]
 
     def call_closure(self, starts, max_depth: int = 6, cap: int = 300):
         seen = set(starts)
